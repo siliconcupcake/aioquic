@@ -32,6 +32,13 @@ async def homepage(request):
     await request.send_push_promise("/style.css")
     return templates.TemplateResponse("index.html", {"request": request})
 
+@app.route("/index.html")
+async def indexpage(request):
+    """
+    Simple homepage.
+    """
+    await request.send_push_promise("/style.css")
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.route("/echo", methods=["POST"])
 async def echo(request):
