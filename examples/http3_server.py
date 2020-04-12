@@ -74,7 +74,7 @@ class HttpRequestHandler:
             )
 
     async def run_asgi(self, app: AsgiApplication) -> None:
-        await application(self.scope, self.receive, self.send)
+        await app(self.scope, self.receive, self.send)
 
     async def receive(self) -> Dict:
         return await self.queue.get()
