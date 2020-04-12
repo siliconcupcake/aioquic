@@ -384,7 +384,7 @@ class QuicConnection:
         self,
         error_code: int = QuicErrorCode.NO_ERROR,
         frame_type: Optional[int] = None,
-        reason_phrase: str = "",
+        reason_phrase: str = "Client Disconnected",
     ) -> None:
         """
         Close the connection.
@@ -1080,7 +1080,7 @@ class QuicConnection:
 
         # new network path
         network_path = QuicNetworkPath(addr)
-        self._logger.debug("Network path %s discovered", network_path.addr)
+        self._logger.info("Network path %s discovered", network_path.addr)
         return network_path
 
     def _get_or_create_stream(self, frame_type: int, stream_id: int) -> QuicStream:
@@ -1116,7 +1116,7 @@ class QuicConnection:
                 )
 
             # create stream
-            self._logger.debug("Stream %d created by peer" % stream_id)
+            self._logger.info("Stream %d created by peer" % stream_id)
             stream = self._streams[stream_id] = QuicStream(
                 stream_id=stream_id,
                 max_stream_data_local=max_stream_data_local,
@@ -1258,7 +1258,7 @@ class QuicConnection:
         try:
             reason_phrase = buf.pull_bytes(reason_length).decode("utf8")
         except UnicodeDecodeError:
-            reason_phrase = ""
+            reason_phrase = "Unknown Reason"
 
         # log frame
         if self._quic_logger is not None:
@@ -1269,9 +1269,8 @@ class QuicConnection:
                     reason_phrase=reason_phrase,
                 )
             )
-
         self._logger.info(
-            "Connection close code 0x%X, reason %s", error_code, reason_phrase
+            "Connection close code 0x%X, reason: %s", error_code, reason_phrase
         )
         self._close_event = events.ConnectionTerminated(
             error_code=error_code, frame_type=frame_type, reason_phrase=reason_phrase

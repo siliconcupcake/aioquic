@@ -1,6 +1,7 @@
 import asyncio
 import ipaddress
 import socket
+import logging
 import sys
 from typing import AsyncGenerator, Callable, Optional, cast
 
@@ -12,6 +13,7 @@ from .protocol import QuicConnectionProtocol, QuicStreamHandler
 
 __all__ = ["connect"]
 
+logger = logging.getLogger("client")
 
 @asynccontextmanager
 async def connect(
@@ -77,10 +79,11 @@ async def connect(
     )
 
     # connect
-    _, protocol = await loop.create_datagram_endpoint(
+    transport, protocol = await loop.create_datagram_endpoint(
         lambda: create_protocol(connection, stream_handler=stream_handler),
         local_addr=(local_host, 0),
     )
+    logger.info("Bound to port: %s", transport.get_extra_info('socket').getsockname()[1])
     protocol = cast(QuicConnectionProtocol, protocol)
     protocol.connect(addr)
     if wait_connected:

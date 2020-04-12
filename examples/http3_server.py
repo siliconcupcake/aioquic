@@ -28,6 +28,8 @@ try:
 except ImportError:
     uvloop = None
 
+logger = logging.getLogger("server")
+
 AsgiApplication = Callable
 HttpConnection = Union[H0Connection, H3Connection]
 
@@ -304,6 +306,7 @@ class HttpServerProtocol(QuicConnectionProtocol):
                     "scheme": "https",
                     "type": "http",
                 }
+                logger.info("Received %s: %s from Client[%s]", scope["method"], scope["path"], scope["client"][1])
                 handler = HttpRequestHandler(
                     authority=authority,
                     connection=self._http,
@@ -430,7 +433,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     logging.basicConfig(
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        format="%(levelname)s : %(name)s : %(message)s",
         level=logging.DEBUG if args.verbose else logging.INFO,
     )
 

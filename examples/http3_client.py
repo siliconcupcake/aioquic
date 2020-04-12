@@ -182,6 +182,11 @@ class HttpClient(QuicConnectionProtocol):
             stream_id = event.stream_id
             if stream_id in self._request_events:
                 # http
+                if isinstance(event, HeadersReceived):
+                    length = [item for item in event.headers if item[0] == b'content-length']
+                    logger.info("Receiving response of size: %s bytes", length[0][1].decode())
+                else:
+                    logger.info("Received packet of size: %s bytes", str(len(event.data)))
                 self._request_events[event.stream_id].append(event)
                 if event.stream_ended:
                     request_waiter = self._request_waiter.pop(stream_id)
@@ -197,6 +202,8 @@ class HttpClient(QuicConnectionProtocol):
                 self.pushes[event.push_id].append(event)
 
         elif isinstance(event, PushPromiseReceived):
+            path = [item for item in event.headers if item[0] == b':path']
+            logger.info("Received Push Promise for: %s", path[0][1].decode())
             self.pushes[event.push_id] = deque()
             self.pushes[event.push_id].append(event)
 
@@ -284,13 +291,12 @@ def save_session_ticket(ticket: SessionTicket) -> None:
 
 async def run(
     configuration: QuicConfiguration,
-    urls: List[str],
-    data: str,
+    base_url: str,
     include: bool,
     output_dir: Optional[str],
 ) -> None:
     # parse URL
-    parsed = urlparse(urls[0])
+    parsed = urlparse(base_url)
     assert parsed.scheme in (
         "https",
         "wss",
@@ -310,33 +316,42 @@ async def run(
         session_ticket_handler=save_session_ticket,
     ) as client:
         client = cast(HttpClient, client)
+        while (True):
+            data = None
+            path = input("\nEnter URL for request: ")
+            if path == "exit":
+                break
+            if path == "echo":
+                data = input("Enter data to be sent: ")
+            urls = [base_url + path]
+            if parsed.scheme == "wss":
+                ws = await client.websocket(urls[0], subprotocols=["chat", "superchat"])
 
-        if parsed.scheme == "wss":
-            ws = await client.websocket(urls[0], subprotocols=["chat", "superchat"])
+                # send some messages and receive reply
+                for i in range(2):
+                    message = "Hello {}, WebSocket!".format(i)
+                    print("> " + message)
+                    await ws.send(message)
 
-            # send some messages and receive reply
-            for i in range(2):
-                message = "Hello {}, WebSocket!".format(i)
-                print("> " + message)
-                await ws.send(message)
+                    message = await ws.recv()
+                    print("< " + message)
 
-                message = await ws.recv()
-                print("< " + message)
-
-            await ws.close()
-        else:
-            # perform request
-            coros = [
-                perform_http_request(
-                    client=client,
-                    url=url,
-                    data=data,
-                    include=include,
-                    output_dir=output_dir,
-                )
-                for url in urls
-            ]
-            await asyncio.gather(*coros)
+                await ws.close()
+            else:
+                # perform request
+                coros = [
+                    perform_http_request(
+                        client=client,
+                        url=url,
+                        data=data,
+                        include=include,
+                        output_dir=output_dir,
+                    )
+                    for url in urls
+                ]
+                await asyncio.gather(*coros)
+        print("Please wait. Closing Client Connection.")
+    print("Client Application Exitted")
 
 
 if __name__ == "__main__":
@@ -344,14 +359,14 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="HTTP/3 client")
     parser.add_argument(
-        "url", type=str, nargs="+", help="the URL to query (must be HTTPS)"
+        "baseurl", type=str, help="the base URL for the server (must be HTTPS)"
     )
     parser.add_argument(
         "--ca-certs", type=str, help="load CA certificates from the specified file"
     )
-    parser.add_argument(
-        "-d", "--data", type=str, help="send the specified data in a POST request"
-    )
+    # parser.add_argument(
+    #     "-d", "--data", type=str, help="send the specified data in a POST request"
+    # )
     parser.add_argument(
         "-i",
         "--include",
@@ -400,7 +415,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     logging.basicConfig(
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        format="%(levelname)s : %(name)s : %(message)s",
         level=logging.DEBUG if args.verbose else logging.INFO,
     )
 
@@ -437,8 +452,7 @@ if __name__ == "__main__":
         loop.run_until_complete(
             run(
                 configuration=configuration,
-                urls=args.url,
-                data=args.data,
+                base_url=args.baseurl,
                 include=args.include,
                 output_dir=args.output_dir,
             )
