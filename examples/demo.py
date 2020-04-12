@@ -9,12 +9,13 @@ from urllib.parse import urlencode
 import httpbin
 from asgiref.wsgi import WsgiToAsgi
 from starlette.applications import Starlette
-from starlette.responses import PlainTextResponse, Response
+from starlette.responses import PlainTextResponse, Response, FileResponse
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from starlette.websockets import WebSocketDisconnect
 
 ROOT = os.path.dirname(__file__)
+VIDEO_ROOT = os.path.join(ROOT, "videos")
 STATIC_ROOT = os.environ.get("STATIC_ROOT", os.path.join(ROOT, "htdocs"))
 STATIC_URL = "/"
 LOGS_PATH = os.path.join(STATIC_ROOT, "logs")
@@ -22,7 +23,6 @@ QVIS_URL = "https://qvis.edm.uhasselt.be/"
 
 templates = Jinja2Templates(directory=os.path.join(ROOT, "templates"))
 app = Starlette()
-
 
 @app.route("/")
 async def homepage(request):
@@ -49,6 +49,13 @@ async def echo(request):
     media_type = request.headers.get("content-type")
     return Response(content, media_type=media_type)
 
+@app.route("/videos/{filename:str}")
+def videos(request):
+    filepath = VIDEO_ROOT + "/" + request.path_params["filename"]
+    if os.path.isfile(filepath):
+        return FileResponse(filepath)
+    else:
+        return PlainTextResponse("Not Found")
 
 @app.route("/logs/?")
 async def logs(request):
