@@ -184,9 +184,11 @@ class HttpClient(QuicConnectionProtocol):
                 # http
                 if isinstance(event, HeadersReceived):
                     length = [item for item in event.headers if item[0] == b'content-length']
-                    logger.info("Receiving response of size: %s bytes", length[0][1].decode())
+                    logger.info("Total Response Size: %s bytes", length[0][1].decode())
+                    content_type = [item for item in event.headers if item[0] == b'content-type']
+                    logger.info("Response Type: %s", content_type[0][1].decode())
                 else:
-                    logger.info("Received packet of size: %s bytes", str(len(event.data)))
+                    logger.info("Packet Size: %s bytes", str(len(event.data)))
                 self._request_events[event.stream_id].append(event)
                 if event.stream_ended:
                     request_waiter = self._request_waiter.pop(stream_id)

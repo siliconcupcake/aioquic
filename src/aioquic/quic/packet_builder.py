@@ -1,3 +1,7 @@
+import time
+import logging
+import binascii
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -23,7 +27,10 @@ PACKET_NUMBER_SEND_SIZE = 2
 
 
 QuicDeliveryHandler = Callable[..., None]
+logger = logging.getLogger("quic")
 
+def dump_cid(cid: bytes) -> str:
+    return binascii.hexlify(cid).decode("ascii")
 
 class QuicDeliveryState(Enum):
     ACKED = 0
@@ -101,6 +108,7 @@ class QuicPacketBuilder:
         self._buffer = Buffer(PACKET_MAX_SIZE)
         self._buffer_capacity = PACKET_MAX_SIZE
         self._flight_capacity = PACKET_MAX_SIZE
+        self._logger = logger
 
     @property
     def packet_is_empty(self) -> bool:
@@ -332,6 +340,7 @@ class QuicPacketBuilder:
             # encrypt in place
             plain = buf.data_slice(self._packet_start, self._packet_start + packet_size)
             buf.seek(self._packet_start)
+            start = time.time()
             buf.push_bytes(
                 self._packet_crypto.encrypt_packet(
                     plain[0 : self._header_size],
@@ -339,6 +348,8 @@ class QuicPacketBuilder:
                     self._packet_number,
                 )
             )
+            elapsed = (time.time() - start) * 1000
+            logger.debug("[%s] Encrypted Packet in %.3f ms" % (dump_cid(self._peer_cid), elapsed))
             self._packet.sent_bytes = buf.tell() - self._packet_start
             self._packets.append(self._packet)
             if self._packet.in_flight:

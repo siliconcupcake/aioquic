@@ -1,6 +1,7 @@
 import binascii
 import logging
 import os
+import time
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
@@ -285,6 +286,9 @@ class QuicConnection:
         self._streams_blocked_uni: List[QuicStream] = []
         self._version: Optional[int] = None
 
+        # metrics
+        self._handshake_time = 0
+
         # logging
         if logger_connection_id is None:
             logger_connection_id = self._peer_cid
@@ -483,6 +487,7 @@ class QuicConnection:
 
             try:
                 if not self._handshake_confirmed:
+                    self._handshake_time = time.time()
                     for epoch in [tls.Epoch.INITIAL, tls.Epoch.HANDSHAKE]:
                         self._write_handshake(builder, epoch, now)
                 self._write_application(builder, network_path, now)
@@ -769,9 +774,12 @@ class QuicConnection:
             buf.seek(end_off)
 
             try:
+                start = time.time()
                 plain_header, plain_payload, packet_number = crypto.decrypt_packet(
                     data[start_off:end_off], encrypted_off, space.expected_packet_number
                 )
+                elapsed = (time.time() - start) * 1000
+                self._logger.debug("Decrypted Packet in %.3f ms", elapsed)
             except KeyUnavailableError as exc:
                 self._logger.debug(exc)
                 if self._quic_logger is not None:
@@ -1349,10 +1357,14 @@ class QuicConnection:
                         session_resumed=self.tls.session_resumed,
                     )
                 )
+                self._handshake_time = (time.time() - self._handshake_time) * 1000
                 self._unblock_streams(is_unidirectional=False)
                 self._unblock_streams(is_unidirectional=True)
                 self._logger.info(
                     "ALPN negotiated protocol %s", self.tls.alpn_negotiated
+                )
+                self._logger.debug(
+                    "Handshake completed in %.3f ms", self._handshake_time
                 )
 
     def _handle_data_blocked_frame(
@@ -1905,6 +1917,7 @@ class QuicConnection:
         while not buf.eof():
             frame_type = buf.pull_uint_var()
 
+            # self._logger.debug("FrameType: %d", frame_type)
             # check frame type is known
             try:
                 frame_handler, frame_epochs = self.__frame_handlers[frame_type]
