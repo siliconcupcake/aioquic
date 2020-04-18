@@ -5,6 +5,7 @@
 .eggs
 .mypy_cache
 .vscode
+*.qlog
 /build
 /dist
 /docs/_build
