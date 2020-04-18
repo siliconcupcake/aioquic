@@ -3,17 +3,17 @@ import os
 from functools import partial
 from typing import Callable, Dict, Optional, Text, Union, cast
 
-from ..buffer import Buffer
-from ..quic.configuration import QuicConfiguration
-from ..quic.connection import NetworkAddress, QuicConnection
-from ..quic.packet import (
+from aioquic.buffer import Buffer
+from aioquic.quic.configuration import QuicConfiguration
+from aioquic.quic.connection import NetworkAddress, QuicConnection
+from aioquic.quic.packet import (
     PACKET_TYPE_INITIAL,
     encode_quic_retry,
     encode_quic_version_negotiation,
     pull_quic_header,
 )
-from ..quic.retry import QuicRetryTokenHandler
-from ..tls import SessionTicketFetcher, SessionTicketHandler
+from aioquic.quic.retry import QuicRetryTokenHandler
+from aioquic.tls import SessionTicketFetcher, SessionTicketHandler
 from .protocol import QuicConnectionProtocol, QuicStreamHandler
 
 __all__ = ["serve"]
