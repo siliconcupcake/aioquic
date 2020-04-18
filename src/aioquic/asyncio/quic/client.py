@@ -5,9 +5,9 @@ import logging
 import sys
 from typing import AsyncGenerator, Callable, Optional, cast
 
-from ..quic.configuration import QuicConfiguration
-from ..quic.connection import QuicConnection
-from ..tls import SessionTicketHandler
+from aioquic.quic.configuration import QuicConfiguration
+from aioquic.quic.connection import QuicConnection
+from aioquic.tls import SessionTicketHandler
 from .compat import asynccontextmanager
 from .protocol import QuicConnectionProtocol, QuicStreamHandler
 

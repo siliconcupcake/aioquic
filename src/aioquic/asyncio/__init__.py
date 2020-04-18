@@ -1,3 +1,3 @@
-from .client import connect  # noqa
-from .protocol import QuicConnectionProtocol  # noqa
-from .server import serve  # noqa
+from .quic.client import connect  # noqa
+from .quic.protocol import QuicConnectionProtocol  # noqa
+from .quic.server import serve  # noqa
