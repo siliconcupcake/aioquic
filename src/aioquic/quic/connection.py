@@ -487,7 +487,6 @@ class QuicConnection:
 
             try:
                 if not self._handshake_confirmed:
-                    self._handshake_time = time.time()
                     for epoch in [tls.Epoch.INITIAL, tls.Epoch.HANDSHAKE]:
                         self._write_handshake(builder, epoch, now)
                 self._write_application(builder, network_path, now)
@@ -779,7 +778,7 @@ class QuicConnection:
                     data[start_off:end_off], encrypted_off, space.expected_packet_number
                 )
                 elapsed = (time.time() - start) * 1000
-                self._logger.debug("Decrypted Packet in %.3f ms", elapsed)
+                # self._logger.debug("Decrypted Packet in %.3f ms", elapsed)
             except KeyUnavailableError as exc:
                 self._logger.debug(exc)
                 if self._quic_logger is not None:
@@ -1037,6 +1036,7 @@ class QuicConnection:
         """
         assert self._is_client
 
+        self._handshake_time = time.time()
         self._close_at = now + self._configuration.idle_timeout
         self._initialize(self._peer_cid)
 
@@ -1357,15 +1357,16 @@ class QuicConnection:
                         session_resumed=self.tls.session_resumed,
                     )
                 )
-                self._handshake_time = (time.time() - self._handshake_time) * 1000
                 self._unblock_streams(is_unidirectional=False)
                 self._unblock_streams(is_unidirectional=True)
                 self._logger.info(
                     "ALPN negotiated protocol %s", self.tls.alpn_negotiated
                 )
-                self._logger.debug(
-                    "Handshake completed in %.3f ms", self._handshake_time
-                )
+                if self._is_client:
+                    self._handshake_time = (time.time() - self._handshake_time) * 1000
+                    self._logger.info(
+                        "Handshake completed in %.3f ms", self._handshake_time
+                    )
 
     def _handle_data_blocked_frame(
         self, context: QuicReceiveContext, frame_type: int, buf: Buffer
