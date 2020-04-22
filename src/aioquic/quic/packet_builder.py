@@ -349,7 +349,7 @@ class QuicPacketBuilder:
                 )
             )
             elapsed = (time.time() - start) * 1000
-            logger.debug("[%s] Encrypted Packet in %.3f ms" % (dump_cid(self._peer_cid), elapsed))
+            # logger.debug("[%s] Encrypted Packet in %.3f ms" % (dump_cid(self._peer_cid), elapsed))
             self._packet.sent_bytes = buf.tell() - self._packet_start
             self._packets.append(self._packet)
             if self._packet.in_flight:
