@@ -255,6 +255,7 @@ class QuicConnection:
         self._local_max_streams_bidi = 128
         self._local_max_streams_uni = 128
         self._loss_at: Optional[float] = None
+        self._loss_count: int = 0
         self._network_paths: List[QuicNetworkPath] = []
         self._original_connection_id = original_connection_id
         self._pacing_at: Optional[float] = None
@@ -601,6 +602,7 @@ class QuicConnection:
 
         # loss detection timeout
         if self._loss_at is not None and now >= self._loss_at:
+            self._loss_count += 1
             self._logger.debug("Loss detection triggered")
             self._loss.on_loss_detection_timeout(now=now)
 

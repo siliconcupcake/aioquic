@@ -1,4 +1,5 @@
 import math
+import time
 from typing import Callable, Dict, Iterable, List, Optional
 
 from .logger import QuicLoggerTrace
@@ -88,16 +89,20 @@ class CubicCongestionControl:
     CUBIC congestion control.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, is_client: Optional[bool]) -> None:
         self.bytes_in_flight = 0
+        self.is_client = is_client
         self.congestion_window = K_INITIAL_WINDOW
         self._congestion_recovery_start_time = 0.0
         self._rtt_monitor = QuicRttMonitor()
         self._w_max = 0
-        self._time_of_congestion_avoidance_start = 0
+        self._w_last_max = 0
+        self.congestion_avoidance_start_time: Optional[float] = None
+        self.elapsed_time: float = 0
         self.ssthresh: Optional[int] = None
+        self.congestion_mode: str = 'SS'
 
-    def on_packet_acked(self, packet: QuicSentPacket, now: float, rtt: float) -> None:
+    def on_packet_acked(self, packet: QuicSentPacket, rtt: float) -> None:
         self.bytes_in_flight -= packet.sent_bytes
 
         # don't increase window in congestion recovery
@@ -106,20 +111,28 @@ class CubicCongestionControl:
 
         if self.ssthresh is None or self.congestion_window < self.ssthresh:
             # slow start
+            self.congestion_mode = 'SS'
             self.congestion_window += packet.sent_bytes
         else:
             # congestion avoidance
-            if self._time_of_congestion_avoidance_start == 0:
-                self._time_of_congestion_avoidance_start = now
+            if self.congestion_avoidance_start_time is None:
+                self.congestion_avoidance_start_time = time.time()
 
-            w_est = self._get_standard_estimate(rtt)
-            w_cubic = self._get_cubic_window_size(self._time_of_congestion_avoidance_start)
-            if w_cubic < w_est:
-                # Friendly Region
-                self.congestion_window = int(w_est)
-            else:
-                cubic_wnd = self._get_cubic_window_size(self._time_of_congestion_avoidance_start + rtt)
-                self.congestion_window = max(int((cubic_wnd - self.congestion_window) / self.congestion_window), K_MINIMUM_WINDOW)
+            elapsed_time = time.time() - self.congestion_avoidance_start_time
+            self.elapsed_time = elapsed_time
+
+            # w_est = self._get_standard_estimate(elapsed_time, rtt)
+            # w_cubic = self._get_cubic_window_size(elapsed_time)
+            # if w_cubic < w_est:
+            #     # Friendly Region
+            #     self.avoidance_mode = 'FR'
+            #     self.congestion_window = int(w_est)
+            # else:
+            self.congestion_mode = 'CB'
+            cubic_wnd = self._get_cubic_window_size(elapsed_time + rtt)
+            self.congestion_window += int((cubic_wnd - self.congestion_window) / self.congestion_window)
+
+        # self.log_window_size("ACK")
 
     def on_packet_sent(self, packet: QuicSentPacket) -> None:
         self.bytes_in_flight += packet.sent_bytes
@@ -139,31 +152,49 @@ class CubicCongestionControl:
         if lost_largest_time > self._congestion_recovery_start_time:
             self._congestion_recovery_start_time = now
             self._w_max = self.congestion_window
+            if self._w_max < self._w_last_max:
+                self._w_last_max = self._w_max
+                self._w_max = int (self._w_max * (1 + K_BETA_CUBIC) / 2)
+            else:
+                self._w_last_max = self._w_max
             self.congestion_window = max(int(self.congestion_window * K_BETA_CUBIC), K_MINIMUM_WINDOW)
             self.ssthresh = self.congestion_window
-            self._time_of_congestion_avoidance_start = 0
+            # self.congestion_avoidance_start_time = None
 
+        # self.log_window_size("LOST")
         # TODO : collapse congestion window if persistent congestion
 
     def on_rtt_measurement(self, latest_rtt: float, now: float) -> None:
         # check whether we should exit slow start
-        if self.ssthresh is None and self._rtt_monitor.is_rtt_increasing(
-            latest_rtt, now
-        ):
-            self.ssthresh = self.congestion_window
+        # if self.ssthresh is None and self._rtt_monitor.is_rtt_increasing(
+        #     latest_rtt, now
+        # ):
+            # print("RTT Increasing")
+            # self.ssthresh = self.congestion_window
+            # self.congestion_avoidance_start_time = None
+        pass
 
-    def _get_cubic_window_size(self, time: float) -> int:
+    def _get_cubic_window_size(self, time: float) -> float:
         K = math.pow(self._w_max * (1 - K_BETA_CUBIC) / K_WINDOW_AGGRESSIVENESS, 1/3)
-        w_cubic = K_WINDOW_AGGRESSIVENESS * (time - K) + self._w_max
-        return int(w_cubic)
+        w_cubic = K_WINDOW_AGGRESSIVENESS * math.pow((time - K), 3) + self._w_max
+        return w_cubic
 
-    def _get_standard_estimate(self, rtt: float) -> int:
-        t = self._time_of_congestion_avoidance_start
+    def _get_standard_estimate(self, t: float, rtt: float) -> float:
         try:
             w_est = self._w_max * K_BETA_CUBIC + (3 * (1 - K_BETA_CUBIC) / (1 + K_BETA_CUBIC)) * (t/rtt)
         except:
+            print("Exception Occurred")
             w_est = K_MINIMUM_WINDOW
-        return int(w_est)
+        return w_est
+
+    def log_window_size(self, reason: str) -> None:
+        if self.is_client:
+            filename = "client-cwnd.txt"
+        else:
+            filename = "server-cwnd.txt"
+        with open(filename, 'a') as logfile:
+            logfile.write("{0}[{3}][{4}]: {1} {2}\n"
+            .format(reason, self.congestion_window, self.elapsed_time, self.congestion_mode, self._w_max))
 
 class RenoCongestionControl:
     """
@@ -178,7 +209,7 @@ class RenoCongestionControl:
         self._rtt_monitor = QuicRttMonitor()
         self.ssthresh: Optional[int] = None
 
-    def on_packet_acked(self, packet: QuicSentPacket, now: float, rtt: float) -> None:
+    def on_packet_acked(self, packet: QuicSentPacket, rtt: float) -> None:
         self.bytes_in_flight -= packet.sent_bytes
 
         # don't increase window in congestion recovery
@@ -257,7 +288,8 @@ class QuicPacketRecovery:
         self._time_of_last_sent_ack_eliciting_packet = 0.0
 
         # congestion control
-        self._cc = CubicCongestionControl()
+        self._cc = CubicCongestionControl(is_client_without_1rtt)
+        # self._cc = RenoCongestionControl()
         self._pacer = QuicPacketPacer()
 
     @property
@@ -346,7 +378,7 @@ class QuicPacketRecovery:
                     is_ack_eliciting = True
                     space.ack_eliciting_in_flight -= 1
                 if packet.in_flight:
-                    self._cc.on_packet_acked(packet, now, self._rtt_smoothed)
+                    self._cc.on_packet_acked(packet, self._rtt_smoothed)
                 largest_newly_acked = packet_number
                 largest_sent_time = packet.sent_time
 
