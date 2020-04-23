@@ -81,7 +81,7 @@ async def connect(
     # connect
     transport, protocol = await loop.create_datagram_endpoint(
         lambda: create_protocol(connection, stream_handler=stream_handler),
-        local_addr=(local_host, 0),
+        local_addr=(local_host, 4434),
     )
     logger.info("Bound to port: %s", transport.get_extra_info('socket').getsockname()[1])
     protocol = cast(QuicConnectionProtocol, protocol)
