@@ -425,6 +425,7 @@ if __name__ == "__main__":
     logging.basicConfig(
         format="%(levelname)s : %(name)s : %(message)s",
         level=logging.DEBUG if args.verbose else logging.INFO,
+        # filename="client-reno.log"
     )
 
     if args.output_dir is not None and not os.path.isdir(args.output_dir):
