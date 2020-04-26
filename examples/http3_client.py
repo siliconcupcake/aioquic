@@ -320,39 +320,40 @@ async def run(
     ) as client:
         client = cast(HttpClient, client)
         data = None
-        path = "5000000"
+        path = "50000000"
         # path = input("\nEnter URL for request: ")
         # if path == "exit":
         #     break
         # if path == "echo":
         #     data = input("Enter data to be sent: ")
-        urls = [base_url + path]
-        if parsed.scheme == "wss":
-            ws = await client.websocket(urls[0], subprotocols=["chat", "superchat"])
+        for r in range(10):
+            urls = [base_url + path]
+            if parsed.scheme == "wss":
+                ws = await client.websocket(urls[0], subprotocols=["chat", "superchat"])
 
-            # send some messages and receive reply
-            for i in range(2):
-                message = "Hello {}, WebSocket!".format(i)
-                print("> " + message)
-                await ws.send(message)
+                # send some messages and receive reply
+                for i in range(2):
+                    message = "Hello {}, WebSocket!".format(i)
+                    print("> " + message)
+                    await ws.send(message)
 
-                message = await ws.recv()
-                print("< " + message)
+                    message = await ws.recv()
+                    print("< " + message)
 
-            await ws.close()
-        else:
-            # perform request
-            coros = [
-                perform_http_request(
-                    client=client,
-                    url=url,
-                    data=data,
-                    include=include,
-                    output_dir=output_dir,
-                )
-                for url in urls
-            ]
-            await asyncio.gather(*coros)
+                await ws.close()
+            else:
+                # perform request
+                coros = [
+                    perform_http_request(
+                        client=client,
+                        url=url,
+                        data=data,
+                        include=include,
+                        output_dir=output_dir,
+                    )
+                    for url in urls
+                ]
+                await asyncio.gather(*coros)
         print("Please wait. Closing Client Connection.")
     print("Client Application Exitted")
 
