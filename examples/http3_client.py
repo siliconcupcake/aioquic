@@ -322,13 +322,13 @@ async def run(
     ) as client:
         client = cast(HttpClient, client)
         data = None
-        path = "50000000"
+        path = "5000000"
         # path = input("\nEnter URL for request: ")
         # if path == "exit":
         #     break
         # if path == "echo":
         #     data = input("Enter data to be sent: ")
-        for r in range(10):
+        for r in range(5):
             urls = [base_url + path]
             if parsed.scheme == "wss":
                 ws = await client.websocket(urls[0], subprotocols=["chat", "superchat"])
