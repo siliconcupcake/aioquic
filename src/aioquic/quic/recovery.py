@@ -32,6 +32,8 @@ K_LATENCY_COEFF = 900
 K_LOSS_COEFF = 11.35
 K_EPSILON = 0.05
 K_CONVERSION_FACTOR = 1
+K_INITIAL_BOUNDARY = 0.05
+K_BOUNDARY_INC = 0.1
 
 class QuicPacketSpace:
     def __init__(self) -> None:
@@ -152,7 +154,8 @@ class VivaceCongestionControl:
         self.confidence_count: int = 0
         self._in_slow_start: bool = True
         self._rtt_monitor = QuicRttMonitor()
-        self.change_boundary = 0.05 * K_MAX_DATAGRAM_SIZE
+        self.change_boundary: float = K_INITIAL_BOUNDARY
+        self.boundary_count: int = -1
         self.ssthresh: Optional[int] = None
         self._mi_duration: float = 0.5
         self.log = log
@@ -195,11 +198,12 @@ class VivaceCongestionControl:
                 gamma = (prev_mi.utility - current_mi.utility) / (2 * self.ssthresh * K_EPSILON)
                 confidence = self.confidence_amplifier(gamma)
                 delta = (confidence * K_CONVERSION_FACTOR * gamma) * K_MAX_DATAGRAM_SIZE
-                if delta > self.change_boundary:
-                    delta = self.change_boundary
-                #     self.change_boundary += 5 * K_MAX_DATAGRAM_SIZE
-                # else:
-                #     self.change_boundary -= 5 * K_MAX_DATAGRAM_SIZE
+                delta_dir = 1 if delta > 0 else -1
+                if abs(delta) > (self.change_boundary * self.ssthresh):
+                    delta = delta_dir * self.change_boundary * self.ssthresh
+                else:
+                    self.dynamic_boundary(delta)
+                self.change_boundary = K_INITIAL_BOUNDARY + (self.boundary_count * K_BOUNDARY_INC)
                 # print("delta: %f" % delta)
                 self.congestion_window = max(int(self.ssthresh + delta), K_MINIMUM_WINDOW)
                 new_mi = MonitorInterval(self.congestion_window, True)
@@ -231,13 +235,22 @@ class VivaceCongestionControl:
         # self._mi_duration = latest_rtt
         pass
 
+    def dynamic_boundary(self, delta: float) -> None:
+        w = K_INITIAL_BOUNDARY + (self.boundary_count * K_BOUNDARY_INC)
+        while abs(delta) <= w * self.ssthresh:
+            self.boundary_count -= 1
+            w = K_INITIAL_BOUNDARY + (self.boundary_count * K_BOUNDARY_INC)
+        self.boundary_count += 1
+
     def confidence_amplifier(self, gamma: float) -> float:
         current_del = gamma > 0
         if current_del == self.positive_del:
             self.confidence_count += 1
+            self.boundary_count += 1
         else:
-            self._positive_del = current_del
+            self.positive_del = current_del
             self.confidence_count = 1
+            self.boundary_count = 0
 
         if self.confidence_count <= 3:
             ans = self.confidence_count
