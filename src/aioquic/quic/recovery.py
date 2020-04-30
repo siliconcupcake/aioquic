@@ -159,6 +159,8 @@ class VivaceCongestionControl:
         self.ssthresh: Optional[int] = None
         self._mi_duration: float = 0.5
         self.log = log
+        self.loss_count = 0
+        self.loss_size = 0
 
     def on_packet_acked(self, packet: QuicSentPacket, rtt: float) -> None:
         self.bytes_in_flight -= packet.sent_bytes
@@ -227,6 +229,8 @@ class VivaceCongestionControl:
 
         for packet in packets:
             self.bytes_in_flight -= packet.sent_bytes
+            self.loss_count += 1
+            self.loss_size += packet.sent_bytes
             current_mi.register_loss()
 
         # TODO : collapse congestion window if persistent congestion
@@ -274,6 +278,8 @@ class CubicCongestionControl:
         self.create_time: float = time.time()
         self.ssthresh: Optional[int] = None
         self.log = log
+        self.loss_count = 0
+        self.loss_size = 0
 
     def on_packet_acked(self, packet: QuicSentPacket, rtt: float) -> None:
         self.bytes_in_flight -= packet.sent_bytes
@@ -315,6 +321,8 @@ class CubicCongestionControl:
         lost_largest_time = 0.0
         for packet in packets:
             self.bytes_in_flight -= packet.sent_bytes
+            self.loss_count += 1
+            self.loss_size += packet.sent_bytes
             lost_largest_time = packet.sent_time
 
         # start a new congestion event if packet was sent after the
@@ -362,6 +370,8 @@ class RenoCongestionControl:
         self.create_time = time.time()
         self.ssthresh: Optional[int] = None
         self.log = log
+        self.loss_count = 0
+        self.loss_size = 0
 
     def on_packet_acked(self, packet: QuicSentPacket, rtt: float) -> None:
         self.bytes_in_flight -= packet.sent_bytes
@@ -392,6 +402,8 @@ class RenoCongestionControl:
         lost_largest_time = 0.0
         for packet in packets:
             self.bytes_in_flight -= packet.sent_bytes
+            self.loss_count += 1
+            self.loss_size += packet.sent_bytes
             lost_largest_time = packet.sent_time
 
         # start a new congestion event if packet was sent after the
@@ -426,9 +438,9 @@ class QuicPacketRecovery:
     ) -> None:
         self.is_client_without_1rtt = is_client_without_1rtt
         if self.is_client_without_1rtt:
-            self._log_filename = 'client-cwnd.txt'
+            self._log_filename = 'logs/client'
         else:
-            self._log_filename = 'server-cwnd.txt'
+            self._log_filename = 'logs/server'
         self.max_ack_delay = 0.025
         self.spaces: List[QuicPacketSpace] = []
 
@@ -447,9 +459,20 @@ class QuicPacketRecovery:
 
         # congestion control
         # self._cc = RenoCongestionControl(True)
-        # self._cc = CubicCongestionControl(True)
-        self._cc = VivaceCongestionControl(True)
+        self._cc = CubicCongestionControl(True)
+        # self._cc = VivaceCongestionControl(True)
         self._pacer = QuicPacketPacer()
+
+        if isinstance(self._cc, RenoCongestionControl):
+            self._log_filename += '-reno'
+        elif isinstance(self._cc, CubicCongestionControl):
+            self._log_filename += '-cubic'
+        elif isinstance(self._cc, VivaceCongestionControl):
+            self._log_filename += '-vivace'
+
+        self._last_throughput_log_time = 0
+        self._last_loss_log_time = 0
+        self._last_latency_log_time = 0
 
     @property
     def bytes_in_flight(self) -> int:
@@ -584,6 +607,7 @@ class QuicPacketRecovery:
                 self._cc.on_rtt_measurement(self._rtt_smoothed, now=now)
             else:
                 self._cc.on_rtt_measurement(latest_rtt, now=now)
+            self._log_network_latency(self._rtt_smoothed)
             self._pacer.update_rate(
                 congestion_window=self._cc.congestion_window,
                 smoothed_rtt=self._rtt_smoothed,
@@ -716,6 +740,7 @@ class QuicPacketRecovery:
         if lost_packets_cc:
             self._cc.on_packets_lost(lost_packets_cc, now=now)
             self._log_window_size("LOSS")
+            self._log_packet_loss()
             self._pacer.update_rate(
                 congestion_window=self._cc.congestion_window,
                 smoothed_rtt=self._rtt_smoothed,
@@ -725,9 +750,27 @@ class QuicPacketRecovery:
 
     def _log_window_size(self, reason: str) -> None:
         if self._cc.log:
-            with open(self._log_filename, 'a') as logfile:
-                logfile.write("{0} {1} {2}\n"
-                .format(reason[0], self._cc.congestion_window, time.time() - self._cc.create_time))
+            if time.time() - self._last_throughput_log_time > 0.001:
+                with open(self._log_filename + '-window.log', 'a') as logfile:
+                    logfile.write("{0} {1}\n"
+                    .format(self._cc.congestion_window, time.time() - self._cc.create_time))
+                    self._last_throughput_log_time = time.time()
+
+    def _log_packet_loss(self) -> None:
+        if self._cc.log:
+            if time.time() - self._last_loss_log_time > 0.001:
+                with open(self._log_filename + '-loss.log', 'a') as logfile:
+                    logfile.write("{0} {1} {2}\n"
+                    .format(self._cc.loss_count, self._cc.loss_size, time.time() - self._cc.create_time))
+                    self._last_latency_log_time = time.time()
+
+    def _log_network_latency(self, rtt: float) -> None:
+        if self._cc.log:
+            if time.time() - self._last_latency_log_time > 0.001:
+                with open(self._log_filename + '-latency.log', 'a') as logfile:
+                    logfile.write("{0} {1}\n"
+                    .format(rtt, time.time() - self._cc.create_time))
+                    self._last_latency_log_time = time.time()
 
 class QuicRttMonitor:
     """
