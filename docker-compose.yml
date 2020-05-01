@@ -1,0 +1,26 @@
+version: '3'
+
+services:
+  quic-server:
+    build: ./aioquic-server
+    labels:
+      com.docker-tc.enabled: '1'
+    volumes:
+      - ./aioquic-server/logs:/server/logs
+      - ./aioquic-server/src/aioquic/quic/recovery.py:/server/src/aioquic/quic/recovery.py
+      - ./aioquic-server/examples:/server/examples
+    ports:
+      - 4433:4433/udp
+    command: python examples/http3_server.py --certificate tests/ssl_cert.pem --private-key tests/ssl_key.pem
+
+  quic-client:
+    build: ./aioquic-client
+    labels:
+      com.docker-tc.enabled: '1'
+    volumes:
+      - ./aioquic-client/logs:/client/logs
+      - ./aioquic-client/src/aioquic/quic/recovery.py:/client/src/aioquic/quic/recovery.py
+      - ./aioquic-client/examples:/client/examples
+    depends_on:
+      - quic-server
+    command: bash -c "sleep 5 && python examples/http3_client.py --ca-certs tests/pycacert.pem https://172.18.0.2:4433/"
