@@ -308,8 +308,9 @@ class CubicCongestionControl:
             #     self.congestion_window = int(w_est)
             # else:
             cubic_wnd = self._get_cubic_window_size(elapsed_time + rtt)
-            cwnd = self.congestion_window
-            delta = ((cubic_wnd - cwnd) / cwnd)
+            cwnd = self.congestion_window // K_MAX_DATAGRAM_SIZE
+            delta = ((cubic_wnd - cwnd) / cwnd) * K_MAX_DATAGRAM_SIZE
+            # print("{0} {1} {2}".format(cubic_wnd, cwnd, delta))
             self.congestion_window += int(delta)
 
 
@@ -332,7 +333,7 @@ class CubicCongestionControl:
         # start of the previous congestion recovery period.
         if lost_largest_time > self._congestion_recovery_start_time:
             self._congestion_recovery_start_time = now
-            self._w_max = self.congestion_window
+            self._w_max = self.congestion_window // K_MAX_DATAGRAM_SIZE
             if self._w_max < self._w_last_max:
                 self._w_last_max = self._w_max
                 self._w_max = int (self._w_max * (1 + K_BETA_CUBIC) / 2)
@@ -340,7 +341,7 @@ class CubicCongestionControl:
                 self._w_last_max = self._w_max
             self.congestion_window = max(int(self.congestion_window * K_BETA_CUBIC), K_MINIMUM_WINDOW)
             self.ssthresh = self.congestion_window
-            # self.congestion_avoidance_start_time = None
+            self.congestion_avoidance_start_time = None
 
         # TODO : collapse congestion window if persistent congestion
 
