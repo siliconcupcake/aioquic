@@ -1038,7 +1038,6 @@ class QuicConnection:
         """
         assert self._is_client
 
-        self._handshake_time = time.time()
         self._close_at = now + self._configuration.idle_timeout
         self._initialize(self._peer_cid)
 
@@ -1343,6 +1342,7 @@ class QuicConnection:
                 tls.State.SERVER_POST_HANDSHAKE,
             ]:
                 self._handshake_complete = True
+                self._handshake_time = (time.time() - self._handshake_time) * 1000
 
                 # for servers, the handshake is now confirmed
                 if not self._is_client:
@@ -1364,8 +1364,10 @@ class QuicConnection:
                 self._logger.info(
                     "ALPN negotiated protocol %s", self.tls.alpn_negotiated
                 )
+                self._logger.info(
+                    "Using %s", type(self._loss._cc).__name__
+                )
                 if self._is_client:
-                    self._handshake_time = (time.time() - self._handshake_time) * 1000
                     self._logger.info(
                         "Handshake completed in %.3f ms", self._handshake_time
                     )
@@ -2291,6 +2293,7 @@ class QuicConnection:
                 packet_type = PACKET_TYPE_INITIAL
             else:
                 packet_type = PACKET_TYPE_HANDSHAKE
+                self._handshake_time = time.time()
             builder.start_packet(packet_type, crypto)
 
             # ACK

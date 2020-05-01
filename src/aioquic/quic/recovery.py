@@ -16,6 +16,7 @@ K_SECOND = 1.0
 
 # congestion control
 K_MAX_DATAGRAM_SIZE = 1280
+K_LOG_INTERVAL = 0.001
 K_INITIAL_WINDOW = 10 * K_MAX_DATAGRAM_SIZE
 K_MINIMUM_WINDOW = 2 * K_MAX_DATAGRAM_SIZE
 
@@ -157,7 +158,7 @@ class VivaceCongestionControl:
         self.change_boundary: float = K_INITIAL_BOUNDARY
         self.boundary_count: int = -1
         self.ssthresh: Optional[int] = None
-        self._mi_duration: float = 0.5
+        self._mi_duration: float = 0.1
         self.log = log
         self.loss_count = 0
         self.loss_size = 0
@@ -307,7 +308,9 @@ class CubicCongestionControl:
             #     self.congestion_window = int(w_est)
             # else:
             cubic_wnd = self._get_cubic_window_size(elapsed_time + rtt)
-            self.congestion_window += int((cubic_wnd - self.congestion_window) / self.congestion_window)
+            cwnd = self.congestion_window
+            delta = ((cubic_wnd - cwnd) / cwnd)
+            self.congestion_window += int(delta)
 
 
     def on_packet_sent(self, packet: QuicSentPacket) -> None:
@@ -604,10 +607,10 @@ class QuicPacketRecovery:
 
             # inform congestion controller
             if isinstance(self._cc, VivaceCongestionControl):
-                self._cc.on_rtt_measurement(self._rtt_smoothed, now=now)
+                self._cc.on_rtt_measurement(self._rtt_latest, now=now)
             else:
-                self._cc.on_rtt_measurement(latest_rtt, now=now)
-            self._log_network_latency(self._rtt_smoothed)
+                self._cc.on_rtt_measurement(self._rtt_smoothed, now=now)
+            self._log_network_latency(self._rtt_latest, self._rtt_smoothed)
             self._pacer.update_rate(
                 congestion_window=self._cc.congestion_window,
                 smoothed_rtt=self._rtt_smoothed,
@@ -750,7 +753,7 @@ class QuicPacketRecovery:
 
     def _log_window_size(self, reason: str) -> None:
         if self._cc.log:
-            if time.time() - self._last_throughput_log_time > 0.001:
+            if time.time() - self._last_throughput_log_time > K_LOG_INTERVAL:
                 with open(self._log_filename + '-window.log', 'a') as logfile:
                     logfile.write("{0} {1}\n"
                     .format(self._cc.congestion_window, time.time() - self._cc.create_time))
@@ -758,18 +761,18 @@ class QuicPacketRecovery:
 
     def _log_packet_loss(self) -> None:
         if self._cc.log:
-            if time.time() - self._last_loss_log_time > 0.001:
+            if time.time() - self._last_loss_log_time > K_LOG_INTERVAL:
                 with open(self._log_filename + '-loss.log', 'a') as logfile:
                     logfile.write("{0} {1} {2}\n"
                     .format(self._cc.loss_count, self._cc.loss_size, time.time() - self._cc.create_time))
                     self._last_latency_log_time = time.time()
 
-    def _log_network_latency(self, rtt: float) -> None:
+    def _log_network_latency(self, latest: float, smoothed: float) -> None:
         if self._cc.log:
-            if time.time() - self._last_latency_log_time > 0.001:
+            if time.time() - self._last_latency_log_time > K_LOG_INTERVAL:
                 with open(self._log_filename + '-latency.log', 'a') as logfile:
-                    logfile.write("{0} {1}\n"
-                    .format(rtt, time.time() - self._cc.create_time))
+                    logfile.write("{0} {1} {2}\n"
+                    .format(latest, smoothed, time.time() - self._cc.create_time))
                     self._last_latency_log_time = time.time()
 
 class QuicRttMonitor:
