@@ -31,6 +31,7 @@ K_WINDOW_AGGRESSIVENESS = 0.4
 K_THROUGHPUT_COEFF = 0.9
 K_LATENCY_COEFF = 900
 K_LOSS_COEFF = 11.35
+K_LATENCY_FILTER = 0.01
 K_EPSILON = 0.05
 K_CONVERSION_FACTOR = 1
 K_INITIAL_BOUNDARY = 0.05
@@ -101,7 +102,7 @@ class MonitorInterval:
     def __init__(self, rate: int, is_primary: bool) -> None:
         self.start_time: float = time.time()
         self.loss_count: int = 0
-        self.sending_rate: int = rate
+        self.sending_rate: int = rate // K_MAX_DATAGRAM_SIZE
         self.rtt_list: List[Tuple[float, float]] = []
         self.is_primary: bool = is_primary
         self.utility: float = 0
@@ -138,6 +139,8 @@ class MonitorInterval:
         elif n > 1:
             slope = (self.rtt_list[1][1] - self.rtt_list[0][1])/(self.rtt_list[1][0] - self.rtt_list[0][0])
         else:
+            slope = 0
+        if slope < K_LATENCY_FILTER:
             slope = 0
         return slope
 
@@ -463,8 +466,8 @@ class QuicPacketRecovery:
 
         # congestion control
         # self._cc = RenoCongestionControl(True)
-        self._cc = CubicCongestionControl(True)
-        # self._cc = VivaceCongestionControl(True)
+        # self._cc = CubicCongestionControl(True)
+        self._cc = VivaceCongestionControl(True)
         self._pacer = QuicPacketPacer()
 
         if isinstance(self._cc, RenoCongestionControl):

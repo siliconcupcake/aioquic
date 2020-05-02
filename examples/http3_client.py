@@ -184,9 +184,9 @@ class HttpClient(QuicConnectionProtocol):
                 # http
                 if isinstance(event, HeadersReceived):
                     length = [item for item in event.headers if item[0] == b'content-length']
-                    logger.info("Total Response Size: %s bytes", length[0][1].decode())
+                    # logger.info("Total Response Size: %s bytes", length[0][1].decode())
                     content_type = [item for item in event.headers if item[0] == b'content-type']
-                    logger.info("Response Type: %s", content_type[0][1].decode())
+                    # logger.info("Response Type: %s", content_type[0][1].decode())
                 else:
                     pass
                     # logger.info("Packet Size: %s bytes", str(len(event.data)))
@@ -260,7 +260,7 @@ async def perform_http_request(
         if isinstance(http_event, DataReceived):
             octets += len(http_event.data)
     logger.info(
-        "Received %d bytes in %.1f s (%.3f Mbps)"
+        "Received %d bytes in %.3f s (%.3f Mbps)"
         % (octets, elapsed, octets * 8 / elapsed / 1000000)
     )
 
@@ -326,7 +326,7 @@ async def run(
         #     break
         # if path == "echo":
         #     data = input("Enter data to be sent: ")
-        for r in range(5):
+        for r in range(30):
             urls = [base_url + path]
             if parsed.scheme == "wss":
                 ws = await client.websocket(urls[0], subprotocols=["chat", "superchat"])

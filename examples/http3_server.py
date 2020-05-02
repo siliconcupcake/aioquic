@@ -97,7 +97,8 @@ class HttpRequestHandler:
                 end_stream=not message.get("more_body", False),
             )
             if not message.get("more_body", False):
-                logger.info("Response Sent")
+                # logger.info("Response Sent")
+                pass
         elif message["type"] == "http.response.push" and isinstance(
             self.connection, H3Connection
         ):
