@@ -1,4 +1,5 @@
 import math
+import os
 import time
 from typing import Callable, Dict, Iterable, List, Optional
 
@@ -16,7 +17,7 @@ K_SECOND = 1.0
 
 # congestion control
 K_MAX_DATAGRAM_SIZE = 1280
-K_LOG_INTERVAL = 0.001
+K_LOG_INTERVAL = 0.01
 K_INITIAL_WINDOW = 10 * K_MAX_DATAGRAM_SIZE
 K_MINIMUM_WINDOW = 2 * K_MAX_DATAGRAM_SIZE
 
@@ -37,6 +38,32 @@ K_CONVERSION_FACTOR = 1
 K_INITIAL_BOUNDARY = 0.05
 K_BOUNDARY_INC = 0.1
 
+def next_path(path_pattern):
+    """
+    Finds the next free path in an sequentially named list of files
+
+    e.g. path_pattern = 'file-%s.txt':
+
+    file-1.txt
+    file-2.txt
+    file-3.txt
+
+    Runs in log(n) time where n is the number of existing files in sequence
+    """
+    i = 1
+
+    # First do an exponential search
+    while os.path.exists(path_pattern % i):
+        i = i * 2
+
+    # Result lies somewhere in the interval (i/2..i]
+    # We call this interval (a..b] and narrow it down until a + 1 = b
+    a, b = (i // 2, i)
+    while a + 1 < b:
+        c = (a + b) // 2 # interval midpoint
+        a, b = (c, b) if os.path.exists(path_pattern % c) else (a, c)
+
+    return path_pattern % b
 class QuicPacketSpace:
     def __init__(self) -> None:
         self.ack_at: Optional[float] = None
@@ -284,6 +311,9 @@ class CubicCongestionControl:
         self.log = log
         self.loss_count = 0
         self.loss_size = 0
+        self._loss_stash = 0
+        self._loss_thresh = 10
+        self._should_decrease = False
 
     def on_packet_acked(self, packet: QuicSentPacket, rtt: float) -> None:
         self.bytes_in_flight -= packet.sent_bytes
@@ -332,12 +362,26 @@ class CubicCongestionControl:
             self.loss_size += packet.sent_bytes
             lost_largest_time = packet.sent_time
 
+        if self.ssthresh is None:
+            self._should_decrease = True
+        elif len(packets) > self._loss_thresh:
+            self._should_decrease = True
+            self._loss_thresh = math.ceil(1.25 * self._loss_thresh)
+        else:
+            self._loss_stash += len(packets)
+            if self._loss_stash > int(1.5 * self._loss_thresh):
+                self._should_decrease = True
+                self._loss_stash %= int(1.5 * self._loss_thresh)
+            else:
+                self._loss_thresh = math.ceil(0.75 * self._loss_thresh)
+                self._should_decrease = False
+
         # start a new congestion event if packet was sent after the
         # start of the previous congestion recovery period.
-        if lost_largest_time > self._congestion_recovery_start_time:
+        if lost_largest_time > self._congestion_recovery_start_time and self._should_decrease:
             self._congestion_recovery_start_time = now
             self._w_max = self.congestion_window // K_MAX_DATAGRAM_SIZE
-            if self._w_max < self._w_last_max:
+            if self._w_max < (0.95 * self._w_last_max):
                 self._w_last_max = self._w_max
                 self._w_max = int (self._w_max * (1 + K_BETA_CUBIC) / 2)
             else:
@@ -443,11 +487,6 @@ class QuicPacketRecovery:
         send_probe: Callable[[], None],
         quic_logger: Optional[QuicLoggerTrace] = None,
     ) -> None:
-        self.is_client_without_1rtt = is_client_without_1rtt
-        if self.is_client_without_1rtt:
-            self._log_filename = 'logs/client'
-        else:
-            self._log_filename = 'logs/server'
         self.max_ack_delay = 0.025
         self.spaces: List[QuicPacketSpace] = []
 
@@ -466,20 +505,47 @@ class QuicPacketRecovery:
 
         # congestion control
         # self._cc = RenoCongestionControl(True)
-        # self._cc = CubicCongestionControl(True)
-        self._cc = VivaceCongestionControl(True)
+        self._cc = CubicCongestionControl(True)
+        # self._cc = VivaceCongestionControl(True)
         self._pacer = QuicPacketPacer()
 
         if isinstance(self._cc, RenoCongestionControl):
-            self._log_filename += '-reno'
+            log_file_dir = 'logs/reno/'
         elif isinstance(self._cc, CubicCongestionControl):
-            self._log_filename += '-cubic'
+            log_file_dir = 'logs/cubic/'
         elif isinstance(self._cc, VivaceCongestionControl):
-            self._log_filename += '-vivace'
+            log_file_dir = 'logs/vivace/'
+
+        self.is_client_without_1rtt = is_client_without_1rtt
+        if self.is_client_without_1rtt:
+            log_file_dir = next_path(log_file_dir + 'client/c%s/')
+        else:
+            log_file_dir = next_path(log_file_dir + 'server/s%s/')
+
+        try:
+            os.makedirs(log_file_dir)
+        except FileExistsError:
+            # directory already exists
+            pass
 
         self._last_throughput_log_time = 0
-        self._last_loss_log_time = 0
         self._last_latency_log_time = 0
+        self._last_loss_log_time = 0
+
+        try:
+            self._throughput_log_file = open(log_file_dir + 'window.log', 'w')
+            self._latency_log_file = open(log_file_dir + 'latency.log', 'w')
+            self._loss_log_file = open(log_file_dir + 'loss.log', 'w')
+        except Exception as e:
+            print(e)
+
+    def __del__(self):
+        if self._throughput_log_file is not None:
+            self._throughput_log_file.close()
+        if self._loss_log_file is not None:
+            self._loss_log_file.close()
+        if self._latency_log_file is not None:
+            self._latency_log_file.close()
 
     @property
     def bytes_in_flight(self) -> int:
@@ -758,26 +824,23 @@ class QuicPacketRecovery:
     def _log_window_size(self, reason: str) -> None:
         if self._cc.log:
             if time.time() - self._last_throughput_log_time > K_LOG_INTERVAL:
-                with open(self._log_filename + '-window.log', 'a') as logfile:
-                    logfile.write("{0} {1}\n"
-                    .format(self._cc.congestion_window, time.time() - self._cc.create_time))
-                    self._last_throughput_log_time = time.time()
+                self._throughput_log_file.write("{0} {1}\n"
+                .format(self._cc.congestion_window, time.time() - self._cc.create_time))
+                self._last_throughput_log_time = time.time()
 
     def _log_packet_loss(self) -> None:
         if self._cc.log:
             if time.time() - self._last_loss_log_time > K_LOG_INTERVAL:
-                with open(self._log_filename + '-loss.log', 'a') as logfile:
-                    logfile.write("{0} {1} {2}\n"
-                    .format(self._cc.loss_count, self._cc.loss_size, time.time() - self._cc.create_time))
-                    self._last_latency_log_time = time.time()
+                self._loss_log_file.write("{0} {1} {2}\n"
+                .format(self._cc.loss_count, self._cc.loss_size, time.time() - self._cc.create_time))
+                self._last_latency_log_time = time.time()
 
     def _log_network_latency(self, latest: float, smoothed: float) -> None:
         if self._cc.log:
             if time.time() - self._last_latency_log_time > K_LOG_INTERVAL:
-                with open(self._log_filename + '-latency.log', 'a') as logfile:
-                    logfile.write("{0} {1} {2}\n"
-                    .format(latest, smoothed, time.time() - self._cc.create_time))
-                    self._last_latency_log_time = time.time()
+                self._latency_log_file.write("{0} {1} {2}\n"
+                .format(latest, smoothed, time.time() - self._cc.create_time))
+                self._last_latency_log_time = time.time()
 
 class QuicRttMonitor:
     """
