@@ -425,6 +425,9 @@ if __name__ == "__main__":
         "-q", "--quic-log", type=str, help="log QUIC events to a file in QLOG format"
     )
     parser.add_argument(
+        "--cc", type=int, help="Congestion Control Algorithm to be used"
+    )
+    parser.add_argument(
         "-r",
         "--stateless-retry",
         action="store_true",
@@ -465,6 +468,8 @@ if __name__ == "__main__":
         quic_logger=quic_logger,
         secrets_log_file=secrets_log_file,
     )
+    if args.cc:
+        configuration.cc = args.cc
 
     # load SSL certificate and key
     configuration.load_cert_chain(args.certificate, args.private_key)

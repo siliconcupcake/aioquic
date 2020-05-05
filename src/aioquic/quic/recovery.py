@@ -486,6 +486,8 @@ class QuicPacketRecovery:
         is_client_without_1rtt: bool,
         send_probe: Callable[[], None],
         quic_logger: Optional[QuicLoggerTrace] = None,
+        congestion_controller: Optional[int] = 0,
+        should_log: Optional[bool] = True,
     ) -> None:
         self.max_ack_delay = 0.025
         self.spaces: List[QuicPacketSpace] = []
@@ -504,9 +506,13 @@ class QuicPacketRecovery:
         self._time_of_last_sent_ack_eliciting_packet = 0.0
 
         # congestion control
-        # self._cc = RenoCongestionControl(True)
-        self._cc = CubicCongestionControl(True)
-        # self._cc = VivaceCongestionControl(True)
+        self._should_log = should_log
+        congestion_switcher = {
+            0: RenoCongestionControl(self._should_log),
+            1: CubicCongestionControl(self._should_log),
+            2: VivaceCongestionControl(self._should_log)
+        }
+        self._cc = congestion_switcher.get(congestion_controller, RenoCongestionControl(self._should_log))
         self._pacer = QuicPacketPacer()
 
         if isinstance(self._cc, RenoCongestionControl):

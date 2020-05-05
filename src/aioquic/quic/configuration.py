@@ -50,6 +50,11 @@ class QuicConfiguration:
     The :class:`~aioquic.quic.logger.QuicLogger` instance to log events to.
     """
 
+    cc: Optional[int] = 0
+    """
+    The Congestion Control Algorithm used by the endpoint
+    """
+
     secrets_log_file: TextIO = None
     """
     A file-like object in which to log traffic secrets.

@@ -306,6 +306,8 @@ class QuicConnection:
             is_client_without_1rtt=self._is_client,
             quic_logger=self._quic_logger,
             send_probe=self._send_probe,
+            congestion_controller=self._configuration.cc,
+            should_log=True,
         )
 
         # things to send

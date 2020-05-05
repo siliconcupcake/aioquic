@@ -297,6 +297,8 @@ async def run(
     base_url: str,
     include: bool,
     output_dir: Optional[str],
+    request_size: int,
+    request_count: int
 ) -> None:
     # parse URL
     parsed = urlparse(base_url)
@@ -320,13 +322,13 @@ async def run(
     ) as client:
         client = cast(HttpClient, client)
         data = None
-        path = "5000000"
+        path = str(request_size)
         # path = input("\nEnter URL for request: ")
         # if path == "exit":
         #     break
         # if path == "echo":
         #     data = input("Enter data to be sent: ")
-        for r in range(30):
+        for r in range(request_count):
             urls = [base_url + path]
             if parsed.scheme == "wss":
                 ws = await client.websocket(urls[0], subprotocols=["chat", "superchat"])
@@ -401,6 +403,21 @@ if __name__ == "__main__":
         "-q", "--quic-log", type=str, help="log QUIC events to a file in QLOG format"
     )
     parser.add_argument(
+        "--cc", type=int, help="congestion control algorithm to be used"
+    )
+    parser.add_argument(
+        "-r", "--request",
+        type=int,
+        help="size of file to be requested (default: %d)" % 5000000,
+        default=5000000
+    )
+    parser.add_argument(
+        "-n", "--count",
+        type=int,
+        help="count of requests to be sent (default: %d)" % 30,
+        default=30
+    )
+    parser.add_argument(
         "-l",
         "--secrets-log",
         type=str,
@@ -421,7 +438,6 @@ if __name__ == "__main__":
     logging.basicConfig(
         format="%(levelname)s : %(name)s : %(message)s",
         level=logging.DEBUG if args.verbose else logging.INFO,
-        # filename="client-reno.log"
     )
 
     if args.output_dir is not None and not os.path.isdir(args.output_dir):
@@ -443,6 +459,8 @@ if __name__ == "__main__":
         configuration.quic_logger = QuicLogger()
     if args.secrets_log:
         configuration.secrets_log_file = open(args.secrets_log, "a")
+    if args.cc:
+        configuration.cc = args.cc
     if args.session_ticket:
         try:
             with open(args.session_ticket, "rb") as fp:
@@ -460,6 +478,8 @@ if __name__ == "__main__":
                 base_url=args.baseurl,
                 include=args.include,
                 output_dir=args.output_dir,
+                request_size=args.request,
+                request_count=args.count,
             )
         )
     finally:
