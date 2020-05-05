@@ -6,7 +6,9 @@
 .mypy_cache
 .vscode
 *.qlog
-logs
+logs/*
+!logs/*.gp
+!logs/*.py
 /build
 /dist
 /docs/_build
