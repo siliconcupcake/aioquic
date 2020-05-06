@@ -159,8 +159,8 @@ class MonitorInterval:
             sy2 = sum(i[1] ** 2 for i in self.rtt_list)
             try:
                 slope = ((n*sxy) - (sx*sy))/((n*sx2) - (sx**2))
-            except e:
-                printf(e)
+            except Exception as e:
+                print(e)
                 print("%d %f %f" % (n, sx2, sx))
                 slope = 0
         elif n > 1:
@@ -366,14 +366,14 @@ class CubicCongestionControl:
             self._should_decrease = True
         elif len(packets) > self._loss_thresh:
             self._should_decrease = True
-            self._loss_thresh = math.ceil(1.25 * self._loss_thresh)
+            self._loss_thresh = math.ceil(0.75 * self._loss_thresh)
         else:
             self._loss_stash += len(packets)
             if self._loss_stash > int(1.5 * self._loss_thresh):
                 self._should_decrease = True
                 self._loss_stash %= int(1.5 * self._loss_thresh)
+                self._loss_thresh = math.ceil(1.25 * self._loss_thresh)
             else:
-                self._loss_thresh = math.ceil(0.75 * self._loss_thresh)
                 self._should_decrease = False
 
         # start a new congestion event if packet was sent after the
@@ -532,16 +532,17 @@ class QuicPacketRecovery:
             os.makedirs(log_file_dir)
         except FileExistsError:
             # directory already exists
+            print("Log Directory already exists")
             pass
 
         self._last_throughput_log_time = 0
         self._last_latency_log_time = 0
-        self._last_loss_log_time = 0
 
         try:
-            self._throughput_log_file = open(log_file_dir + 'window.log', 'w')
-            self._latency_log_file = open(log_file_dir + 'latency.log', 'w')
-            self._loss_log_file = open(log_file_dir + 'loss.log', 'w')
+            self._throughput_log_file = open(log_file_dir + 'window.log', 'w', buffering=1)
+            self._latency_log_file = open(log_file_dir + 'latency.log', 'w', buffering=1)
+            self._loss_log_file = open(log_file_dir + 'loss.log', 'w', buffering=1)
+            self._loss_log_file.write("0 0 0\n")
         except Exception as e:
             print(e)
 
@@ -836,10 +837,8 @@ class QuicPacketRecovery:
 
     def _log_packet_loss(self) -> None:
         if self._cc.log:
-            if time.time() - self._last_loss_log_time > K_LOG_INTERVAL:
-                self._loss_log_file.write("{0} {1} {2}\n"
+            self._loss_log_file.write("{0} {1} {2}\n"
                 .format(self._cc.loss_count, self._cc.loss_size, time.time() - self._cc.create_time))
-                self._last_latency_log_time = time.time()
 
     def _log_network_latency(self, latest: float, smoothed: float) -> None:
         if self._cc.log:
