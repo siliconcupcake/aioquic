@@ -313,6 +313,7 @@ class CubicCongestionControl:
         self.loss_size = 0
         self._loss_stash = 0
         self._loss_thresh = 10
+        self._burst_thresh = 15
         self._should_decrease = False
 
     def on_packet_acked(self, packet: QuicSentPacket, rtt: float) -> None:
@@ -364,14 +365,14 @@ class CubicCongestionControl:
 
         if self.ssthresh is None:
             self._should_decrease = True
-        elif len(packets) > self._loss_thresh:
+        elif len(packets) > self._burst_thresh:
             self._should_decrease = True
-            self._loss_thresh = math.ceil(0.75 * self._loss_thresh)
+            self._burst_thresh = math.ceil(0.75 * self._burst_thresh)
         else:
             self._loss_stash += len(packets)
-            if self._loss_stash > int(1.5 * self._loss_thresh):
+            if self._loss_stash > self._loss_thresh:
                 self._should_decrease = True
-                self._loss_stash %= int(1.5 * self._loss_thresh)
+                self._loss_stash %= self._loss_thresh
                 self._loss_thresh = math.ceil(1.25 * self._loss_thresh)
             else:
                 self._should_decrease = False
@@ -843,8 +844,8 @@ class QuicPacketRecovery:
     def _log_network_latency(self, latest: float, smoothed: float) -> None:
         if self._cc.log:
             if time.time() - self._last_latency_log_time > K_LOG_INTERVAL:
-                self._latency_log_file.write("{0} {1} {2}\n"
-                .format(latest, smoothed, time.time() - self._cc.create_time))
+                self._latency_log_file.write("{:.1f} {:.1f} {}\n"
+                .format(latest * 1000, smoothed * 1000, time.time() - self._cc.create_time))
                 self._last_latency_log_time = time.time()
 
 class QuicRttMonitor:

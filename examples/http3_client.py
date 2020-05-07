@@ -259,6 +259,20 @@ async def perform_http_request(
     for http_event in http_events:
         if isinstance(http_event, DataReceived):
             octets += len(http_event.data)
+
+    if client._quic.configuration.cc == 0:
+        log_file_dir = 'logs/reno/'
+    elif client._quic.configuration.cc == 1:
+        log_file_dir = 'logs/cubic/'
+    elif client._quic.configuration.cc == 2:
+        log_file_dir = 'logs/vivace/'
+
+    try:
+        with open(log_file_dir + 'throughput.log', 'a') as logfile:
+            logfile.write("%.5f\n" % (octets * 8 / elapsed / 1000000))
+    except Exception as e:
+        print(e)
+
     logger.info(
         "Received %d bytes in %.3f s (%.3f Mbps)"
         % (octets, elapsed, octets * 8 / elapsed / 1000000)
