@@ -30,7 +30,7 @@ K_WINDOW_AGGRESSIVENESS = 0.4
 
 # VIVACE
 K_THROUGHPUT_COEFF = 0.9
-K_LATENCY_COEFF = 900
+K_LATENCY_COEFF = 450
 K_LOSS_COEFF = 11.35
 K_LATENCY_FILTER = 0.01
 K_EPSILON = 0.05
@@ -268,6 +268,10 @@ class VivaceCongestionControl:
 
     def on_rtt_measurement(self, latest_rtt: float, now: float) -> None:
         # self._mi_duration = latest_rtt
+#        if self._in_slow_start and self._rtt_monitor.is_rtt_increasing(
+#            latest_rtt, now
+#        ):
+#            self._in_slow_start = False
         pass
 
     def dynamic_boundary(self, delta: float) -> None:
@@ -363,19 +367,20 @@ class CubicCongestionControl:
             self.loss_size += packet.sent_bytes
             lost_largest_time = packet.sent_time
 
-        if self.ssthresh is None:
-            self._should_decrease = True
-        elif len(packets) > self._burst_thresh:
-            self._should_decrease = True
-            self._burst_thresh = math.ceil(0.75 * self._burst_thresh)
-        else:
-            self._loss_stash += len(packets)
-            if self._loss_stash > self._loss_thresh:
-                self._should_decrease = True
-                self._loss_stash %= self._loss_thresh
-                self._loss_thresh = math.ceil(1.25 * self._loss_thresh)
-            else:
-                self._should_decrease = False
+#        if self.ssthresh is None:
+#            self._should_decrease = True
+#        elif len(packets) > self._burst_thresh:
+#            self._should_decrease = True
+#            self._burst_thresh = math.ceil(0.75 * self._burst_thresh)
+#        else:
+#            self._loss_stash += len(packets)
+#            if self._loss_stash > self._loss_thresh:
+#                self._should_decrease = True
+#                self._loss_stash %= self._loss_thresh
+#                self._loss_thresh = math.ceil(1.25 * self._loss_thresh)
+#            else:
+#                self._should_decrease = False
+        self._should_decrease = True
 
         # start a new congestion event if packet was sent after the
         # start of the previous congestion recovery period.
@@ -394,7 +399,13 @@ class CubicCongestionControl:
         # TODO : collapse congestion window if persistent congestion
 
     def on_rtt_measurement(self, latest_rtt: float, now: float) -> None:
-        pass
+        # check whether we should exit slow start
+        if self.ssthresh is None and self._rtt_monitor.is_rtt_increasing(
+            latest_rtt, now
+        ):
+            self.ssthresh = self.congestion_window
+        # pass
+
 
     def _get_cubic_window_size(self, time: float) -> float:
         K = math.pow(self._w_max * (1 - K_BETA_CUBIC) / K_WINDOW_AGGRESSIVENESS, 1/3)
@@ -684,10 +695,7 @@ class QuicPacketRecovery:
                 )
 
             # inform congestion controller
-            if isinstance(self._cc, VivaceCongestionControl):
-                self._cc.on_rtt_measurement(self._rtt_latest, now=now)
-            else:
-                self._cc.on_rtt_measurement(self._rtt_smoothed, now=now)
+            self._cc.on_rtt_measurement(self._rtt_smoothed, now=now)
             self._log_network_latency(self._rtt_latest, self._rtt_smoothed)
             self._pacer.update_rate(
                 congestion_window=self._cc.congestion_window,
